@@ -1,12 +1,10 @@
 """Minimal OpenAI-compatible transcription server backed by NVIDIA Parakeet (NeMo)."""
 
-import io
 import logging
 import os
 import tempfile
+from contextlib import asynccontextmanager
 
-import numpy as np
-import soundfile as sf
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
@@ -16,8 +14,6 @@ logging.basicConfig(level=logging.INFO)
 MODEL_NAME = os.getenv(
     "PARAKEET_MODEL", "nvidia/parakeet-tdt-0.6b-v2"
 )
-
-app = FastAPI(title="Parakeet STT API")
 
 _asr_model = None
 
@@ -33,9 +29,13 @@ def _get_model():
     return _asr_model
 
 
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     _get_model()
+    yield
+
+
+app = FastAPI(title="Parakeet STT API", lifespan=lifespan)
 
 
 @app.get("/v1/models")

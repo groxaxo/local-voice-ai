@@ -35,7 +35,8 @@ class Assistant(Agent):
 
     async def on_enter(self):
         # Generate a greeting when the agent joins the session.
-        # Keep it uninterruptible so the client has time to calibrate AEC.
+        # Keep it uninterruptible so the client has time to calibrate
+        # Acoustic Echo Cancellation (AEC).
         self.session.generate_reply(allow_interruptions=False)
 
     @function_tool()

@@ -55,7 +55,7 @@ services:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8015/v1/models > /dev/null"]
       interval: 15s
       timeout: 10s
-      retries: 40
+      retries: 20
       start_period: 120s
 
   vllm:
