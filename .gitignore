@@ -1,3 +1,2 @@
 venv/
 inference/llama/models/
-inference/vllm/data/
