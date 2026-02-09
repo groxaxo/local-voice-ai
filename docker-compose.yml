@@ -7,6 +7,16 @@ services:
     networks:
       - agent_network
 
+  soprano:
+    build:
+      context: ./inference/soprano
+    volumes:
+      - soprano-data:/root/.cache/huggingface
+    ports:
+      - "8890:8000"
+    networks:
+      - agent_network
+
   livekit:
     image: livekit/livekit-server:latest
     ports:
@@ -29,6 +39,24 @@ services:
       - "11435:80"
     networks:
       - agent_network
+
+  parakeet:
+    build:
+      context: ./inference/parakeet
+    volumes:
+      - parakeet-data:/root/.cache
+    environment:
+      - PARAKEET_MODEL=${PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v2}
+    ports:
+      - "8015:8015"
+    networks:
+      - agent_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8015/v1/models > /dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
 
   vllm:
     image: vllm/vllm-openai:latest
@@ -77,13 +105,19 @@ services:
       - LIVEKIT_AGENT_PORT=${LIVEKIT_AGENT_PORT:-7880}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-no-key-needed}
       - GROQ_API_KEY=${GROQ_API_KEY:-no-key-needed}
+      - STT_PROVIDER=${STT_PROVIDER:-parakeet}
+      - TTS_PROVIDER=${TTS_PROVIDER:-kokoro}
     depends_on:
       livekit:
         condition: service_started
       kokoro:
         condition: service_started
+      soprano:
+        condition: service_started
       whisper:
         condition: service_started
+      parakeet:
+        condition: service_healthy
       vllm:
         condition: service_healthy
     healthcheck:
@@ -113,6 +147,8 @@ services:
 
 volumes:
   whisper-data:
+  parakeet-data:
+  soprano-data:
   vllm-data:
 
 networks:
