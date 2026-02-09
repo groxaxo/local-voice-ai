@@ -30,33 +30,39 @@ services:
     networks:
       - agent_network
 
-  llama_cpp:
-    image: ghcr.io/ggml-org/llama.cpp:server
+  vllm:
+    image: vllm/vllm-openai:latest
     command:
+      - --model
+      - "${VLLM_MODEL:-ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g}"
+      - --served-model-name
+      - "${VLLM_MODEL_ALIAS:-gemma-3-27b}"
       - --host
-      - 0.0.0.0
+      - "0.0.0.0"
       - --port
-      - "11434"
-      - --hf-repo
-      - "${LLAMA_HF_REPO:-unsloth/Qwen3-4B-Instruct-2507-GGUF}"
-      - --alias
-      - "${LLAMA_MODEL_ALIAS:-qwen3-4b}"
-      - --ctx-size
-      - "${LLAMA_CTX_SIZE:-16384}"
+      - "8000"
+      - --max-model-len
+      - "${VLLM_MAX_MODEL_LEN:-4096}"
+      - --gpu-memory-utilization
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.90}"
+      - --dtype
+      - auto
+      - --enforce-eager
     ports:
-      - "${LLAMA_HOST_PORT:-11436}:11434"
+      - "${VLLM_HOST_PORT:-8000}:8000"
     volumes:
-      - ./inference/llama/models:/models
+      - vllm-data:/root/.cache/huggingface
     environment:
-      - XDG_CACHE_HOME=/models
-      - HF_HOME=/models
+      - HF_TOKEN=${HF_TOKEN:-}
+    ipc: host
     networks:
       - agent_network
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:11434/v1/models > /dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/v1/models > /dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 120s
 
   livekit_agent:
     build:
@@ -78,7 +84,7 @@ services:
         condition: service_started
       whisper:
         condition: service_started
-      llama_cpp:
+      vllm:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8081/ > /dev/null"]
@@ -107,6 +113,7 @@ services:
 
 volumes:
   whisper-data:
+  vllm-data:
 
 networks:
   agent_network:
