@@ -4,6 +4,11 @@ services:
       args:
         KOKORO_IMAGE: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-gpu:latest}
 
+  soprano:
+    build:
+      args:
+        SOPRANO_BASE: ${SOPRANO_BASE:-nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04}
+
   vllm:
     deploy:
       resources:
@@ -26,3 +31,15 @@ services:
               capabilities: [gpu]
     environment:
       - VOXBOX_DEVICE=${VOXBOX_DEVICE:-cuda:0}
+
+  parakeet:
+    build:
+      args:
+        PARAKEET_BASE: ${PARAKEET_BASE:-nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

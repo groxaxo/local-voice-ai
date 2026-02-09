@@ -11,9 +11,11 @@ This repo contains everything needed to run a real-time AI voice assistant local
 
 - **LiveKit** for WebRTC realtime audio + rooms.
 - **LiveKit Agents (Python)** to orchestrate the STT → LLM → TTS pipeline.
-- **Whisper (via VoxBox)** for speech-to-text.
+- **Parakeet (NVIDIA NeMo)** for speech-to-text (default STT provider).
+- **Whisper (via VoxBox)** as an alternative speech-to-text option.
 - **vLLM** for fast GPU-accelerated LLM inference (OpenAI-compatible API) serving **Gemma 3 27B** (GPTQ 4-bit).
-- **Kokoro** for text-to-speech voice synthesis.
+- **Kokoro** for text-to-speech voice synthesis (default TTS provider).
+- **Soprano** as an alternative ultra-lightweight TTS option.
 - **Next.js + Tailwind** frontend UI.
 - Fully containerized via Docker Compose.
 
@@ -40,7 +42,9 @@ Once it's up, visit [http://localhost:3000](http://localhost:3000) in your brows
 - The default model is `ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g` (change `VLLM_MODEL` in `.env` to use a different model).
 - The API exposes the model under an alias (default `gemma-3-27b` via `VLLM_MODEL_ALIAS`); the agent uses that alias.
 - **GPU required**: vLLM with GPTQ models requires an NVIDIA GPU. Use `./compose-up.sh gpu` (or `./compose-up.ps1 gpu`) to start with GPU support.
-- If you want to use a different STT model, change `VOXBOX_HF_REPO_ID`.
+- If you want to use a different STT model, change `VOXBOX_HF_REPO_ID` (for Whisper) or `PARAKEET_MODEL` (for Parakeet).
+- Switch STT provider with `STT_PROVIDER=whisper` or `STT_PROVIDER=parakeet` (default) in `.env`.
+- Switch TTS provider with `TTS_PROVIDER=kokoro` (default) or `TTS_PROVIDER=soprano` in `.env`.
 - You can swap out the LLM/STT/TTS URLs to use cloud models if you want (see `livekit_agent/src/agent.py`).
 - The first run downloads a lot of data (often tens of GB) for models and supporting libraries. GPU-enabled images are bigger and take longer.
 - Ongoing VRAM/RAM usage depends heavily on the model, context size, and `VLLM_GPU_MEMORY_UTILIZATION` setting.
@@ -55,18 +59,20 @@ Each service is containerized and communicates over a shared Docker network:
 
 - `livekit`: WebRTC signaling server
 - `livekit_agent`: Python agent (LiveKit Agents SDK)
-- `whisper`: Speech-to-text (VoxBox + Whisper)
+- `parakeet`: Speech-to-text (NVIDIA Parakeet NeMo, default STT)
+- `whisper`: Speech-to-text (VoxBox + Whisper, alternative STT)
 - `vllm`: GPU-accelerated LLM provider (vLLM, OpenAI-compatible API)
-- `kokoro`: TTS engine
+- `kokoro`: TTS engine (default TTS)
+- `soprano`: Ultra-lightweight TTS engine (alternative TTS)
 - `frontend`: Next.js client UI
 
 ## Agent
 
 The agent entrypoint is `livekit_agent/src/agent.py`. It uses the LiveKit Agents OpenAI-compatible plugins to talk to local inference services:
 
-- `openai.STT` → the VoxBox Whisper container
+- `openai.STT` → Parakeet (default) or the VoxBox Whisper container (set `STT_PROVIDER`)
 - `openai.LLM` → `vllm` (vLLM OpenAI-compatible server)
-- `openai.TTS` → the Kokoro container
+- `openai.TTS` → Kokoro (default) or Soprano container (set `TTS_PROVIDER`)
 - `silero.VAD` for voice activity detection
 
 ## Environment variables
@@ -105,6 +111,17 @@ The Compose stack runs vLLM with a HuggingFace model so models are fetched autom
 
 Model weights are cached in the `vllm-data` Docker volume.
 
+### STT settings
+
+- `STT_PROVIDER`: STT backend to use (`parakeet` or `whisper`, default `parakeet`)
+- `PARAKEET_MODEL`: NeMo model name for Parakeet (default `nvidia/parakeet-tdt-0.6b-v2`)
+- `VOXBOX_HF_REPO_ID`: HuggingFace model for VoxBox/Whisper (default `Systran/faster-whisper-small`)
+
+### TTS settings
+
+- `TTS_PROVIDER`: TTS backend to use (`kokoro` or `soprano`, default `kokoro`)
+- `KOKORO_IMAGE`: Kokoro Docker image (default `ghcr.io/remsky/kokoro-fastapi-cpu:latest`)
+
 ## Development
 
 Use `.env.local` files in both `frontend` and `livekit_agent` dirs to set the dev environment variables for the project. This way, you can run either of those with `pnpm dev` or `uv run python src/agent.py dev` and test them without needing to build the Docker projects.
@@ -121,7 +138,7 @@ docker compose up --build
 ```
 .
 ├─ frontend/        # Next.js UI client
-├─ inference/       # Local inference services (llama/whisper/kokoro)
+├─ inference/       # Local inference services (llama/whisper/kokoro/soprano/parakeet)
 ├─ livekit/         # LiveKit server config
 ├─ livekit_agent/   # Python voice agent (LiveKit Agents)
 ├─ docker-compose.yml
@@ -139,7 +156,9 @@ docker compose up --build
 
 - Built with LiveKit: https://livekit.io/
 - Uses LiveKit Agents: https://docs.livekit.io/agents/
+- STT via NVIDIA Parakeet (NeMo): https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2
 - STT via VoxBox + Whisper: https://pypi.org/project/vox-box/
 - LLM inference via vLLM: https://github.com/vllm-project/vllm
 - Default model: Gemma 3 27B GPTQ: https://huggingface.co/ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g
 - TTS via Kokoro: https://github.com/remsky/kokoro
+- TTS via Soprano: https://github.com/ekwek1/soprano
