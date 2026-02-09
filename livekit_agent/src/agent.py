@@ -58,8 +58,8 @@ async def my_agent(ctx: JobContext):
         "room": ctx.room.name,
     }
 
-    llama_model = os.getenv("LLAMA_MODEL", "qwen3-4b")
-    llama_base_url = os.getenv("LLAMA_BASE_URL", "http://llama_cpp:11434/v1")
+    llm_model = os.getenv("VLLM_MODEL_ALIAS", "gemma-3-27b")
+    llm_base_url = os.getenv("VLLM_BASE_URL", "http://vllm:8000/v1")
 
     session = AgentSession(
         stt=openai.STT(
@@ -69,9 +69,9 @@ async def my_agent(ctx: JobContext):
             api_key="no-key-needed"
         ),
         llm=openai.LLM(
-            base_url=llama_base_url,
-            # base_url="http://localhost:11436/v1", # uncomment for local testing
-            model=llama_model,
+            base_url=llm_base_url,
+            # base_url="http://localhost:8000/v1", # uncomment for local testing
+            model=llm_model,
             api_key="no-key-needed"
         ),
         tts=openai.TTS(

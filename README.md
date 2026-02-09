@@ -12,7 +12,7 @@ This repo contains everything needed to run a real-time AI voice assistant local
 - **LiveKit** for WebRTC realtime audio + rooms.
 - **LiveKit Agents (Python)** to orchestrate the STT → LLM → TTS pipeline.
 - **Whisper (via VoxBox)** for speech-to-text.
-- **llama.cpp (llama-server)** for running local LLMs (OpenAI-compatible API).
+- **vLLM** for fast GPU-accelerated LLM inference (OpenAI-compatible API) serving **Gemma 3 27B** (GPTQ 4-bit).
 - **Kokoro** for text-to-speech voice synthesis.
 - **Next.js + Tailwind** frontend UI.
 - Fully containerized via Docker Compose.
@@ -36,18 +36,18 @@ Once it's up, visit [http://localhost:3000](http://localhost:3000) in your brows
 
 ### Notes on models and resources
 
-- The LLM runs via `llama-server` and auto-downloads from Hugging Face on first boot (no manual model download needed).
-- The default repo is `unsloth/Qwen3-4B-Instruct-2507-GGUF` (change `LLAMA_HF_REPO` to use a different model or quant).
-- The API exposes the model under an alias (default `qwen3-4b` via `LLAMA_MODEL_ALIAS`); the agent uses that via `LLAMA_MODEL`.
+- The LLM runs via **vLLM** and auto-downloads the model from Hugging Face on first boot (no manual model download needed).
+- The default model is `ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g` (change `VLLM_MODEL` in `.env` to use a different model).
+- The API exposes the model under an alias (default `gemma-3-27b` via `VLLM_MODEL_ALIAS`); the agent uses that alias.
+- **GPU required**: vLLM with GPTQ models requires an NVIDIA GPU. Use `./compose-up.sh gpu` (or `./compose-up.ps1 gpu`) to start with GPU support.
 - If you want to use a different STT model, change `VOXBOX_HF_REPO_ID`.
 - You can swap out the LLM/STT/TTS URLs to use cloud models if you want (see `livekit_agent/src/agent.py`).
 - The first run downloads a lot of data (often tens of GB) for models and supporting libraries. GPU-enabled images are bigger and take longer.
-- Installing takes a while. On an i9-14900hx it takes about 10 minutes to get everything ready.
-- Ongoing VRAM/RAM usage depends heavily on the model, context size, and GPU offload settings.
+- Ongoing VRAM/RAM usage depends heavily on the model, context size, and `VLLM_GPU_MEMORY_UTILIZATION` setting.
 
 ### Startup readiness
 
-`llama_cpp` returns 503s while the model is downloading/loading/warming up. The Compose stack includes a healthcheck for `llama_cpp`, and `livekit_agent` waits until `llama_cpp` is healthy (i.e. `/v1/models` responds) before starting.
+`vllm` returns errors while the model is downloading/loading/warming up. The Compose stack includes a healthcheck for `vllm`, and `livekit_agent` waits until `vllm` is healthy (i.e. `/v1/models` responds) before starting.
 
 ## Architecture
 
@@ -56,7 +56,7 @@ Each service is containerized and communicates over a shared Docker network:
 - `livekit`: WebRTC signaling server
 - `livekit_agent`: Python agent (LiveKit Agents SDK)
 - `whisper`: Speech-to-text (VoxBox + Whisper)
-- `llama_cpp`: Local LLM provider (`llama-server`)
+- `vllm`: GPU-accelerated LLM provider (vLLM, OpenAI-compatible API)
 - `kokoro`: TTS engine
 - `frontend`: Next.js client UI
 
@@ -65,7 +65,7 @@ Each service is containerized and communicates over a shared Docker network:
 The agent entrypoint is `livekit_agent/src/agent.py`. It uses the LiveKit Agents OpenAI-compatible plugins to talk to local inference services:
 
 - `openai.STT` → the VoxBox Whisper container
-- `openai.LLM` → `llama_cpp` (`llama-server`)
+- `openai.LLM` → `vllm` (vLLM OpenAI-compatible server)
 - `openai.TTS` → the Kokoro container
 - `silero.VAD` for voice activity detection
 
@@ -91,17 +91,19 @@ The LiveKit URL is used in two different contexts:
 
 The frontend only signs tokens; it does not connect to LiveKit directly. The browser connects using the `serverUrl` returned by `/api/connection-details`, so make sure `NEXT_PUBLIC_LIVEKIT_URL` points to a reachable LiveKit endpoint.
 
-### LLM (llama.cpp) settings
+### LLM (vLLM) settings
 
-The Compose stack runs `llama-server` with `--hf-repo` so models are fetched automatically and cached on disk:
+The Compose stack runs vLLM with a HuggingFace model so models are fetched automatically and cached in a Docker volume:
 
-- `LLAMA_HF_REPO`: Hugging Face repo, optionally with `:quant` (e.g. `unsloth/Qwen3-4B-Instruct-2507-GGUF:q4_k_m`)
-- `LLAMA_MODEL_ALIAS`: Name exposed via the API (and returned from `/v1/models`)
-- `LLAMA_MODEL`: What the agent requests (should match `LLAMA_MODEL_ALIAS`)
-- `LLAMA_BASE_URL`: LLM base URL for the agent (default `http://llama_cpp:11434/v1`)
-- `LLAMA_HOST_PORT`: Host port mapping for llama-server (default `11436`)
+- `VLLM_MODEL`: HuggingFace model ID (e.g. `ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g`)
+- `VLLM_MODEL_ALIAS`: Name exposed via the API and returned from `/v1/models` (default `gemma-3-27b`)
+- `VLLM_BASE_URL`: LLM base URL for the agent (default `http://vllm:8000/v1`)
+- `VLLM_HOST_PORT`: Host port mapping for vLLM (default `8000`)
+- `VLLM_MAX_MODEL_LEN`: Maximum context length (default `4096`)
+- `VLLM_GPU_MEMORY_UTILIZATION`: Fraction of GPU memory to use (default `0.90`)
+- `HF_TOKEN`: HuggingFace token (needed if the model is gated)
 
-Models are cached under `inference/llama/models` (mounted into the container as `/models`).
+Model weights are cached in the `vllm-data` Docker volume.
 
 ## Development
 
@@ -129,13 +131,15 @@ docker compose up --build
 ## Requirements
 
 - Docker + Docker Compose
-- No GPU required (CPU works)
-- Recommended RAM: 12GB+
+- **NVIDIA GPU required** for vLLM (GPTQ model inference)
+- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed
+- Recommended VRAM: 24GB+ for the default Gemma 3 27B GPTQ model
 
 ## Credits
 
 - Built with LiveKit: https://livekit.io/
 - Uses LiveKit Agents: https://docs.livekit.io/agents/
 - STT via VoxBox + Whisper: https://pypi.org/project/vox-box/
-- Local LLM via llama.cpp: https://github.com/ggml-org/llama.cpp
+- LLM inference via vLLM: https://github.com/vllm-project/vllm
+- Default model: Gemma 3 27B GPTQ: https://huggingface.co/ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g
 - TTS via Kokoro: https://github.com/remsky/kokoro

@@ -1,6 +1,5 @@
-# Override for Apple Silicon Macs - builds native ARM64 llama-server
-services:
-  llama_cpp:
-    build:
-      context: ./inference/llama
-    image: local-voice-ai-llama-server:arm64
+# macOS note: vLLM requires an NVIDIA GPU and is not supported on macOS Docker.
+# To use this project on macOS, point VLLM_BASE_URL to an external
+# OpenAI-compatible endpoint (e.g. a remote vLLM or llama.cpp server)
+# and remove the vllm service dependency from the livekit_agent service.
+services: {}
